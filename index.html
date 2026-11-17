@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TechTrack</title>
+  <style>
+    :root {
+      --azul: #5898d4;
+      --azul-escuro: #3f82c0;
+      --tinta: #1d1d1d;
+      --suave: #6b6b6b;
+      --linha: #e4e4e4;
+      --erro: #c10015;
+      --ok: #21ba45;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Roboto, "Segoe UI", system-ui, sans-serif; color: var(--tinta); background: #fff; }
+
+    header {
+      background: var(--azul); color: #fff; height: 50px; padding: 0 16px;
+      display: flex; align-items: center; gap: 12px; font-size: 1.15rem; font-weight: 700;
+    }
+    header svg { width: 24px; height: 24px; fill: #fff; }
+
+    main { max-width: 830px; margin: 0 auto; padding: 24px 16px 48px; }
+
+    .barra { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; }
+    .barra input[type=search] {
+      flex: 1; height: 40px; padding: 0 12px; font: inherit;
+      border: 1px solid #bdbdbd; border-radius: 4px;
+    }
+    .barra input[type=search]:focus { outline: 2px solid var(--azul); border-color: transparent; }
+
+    .botao {
+      font: inherit; font-weight: 500; text-transform: uppercase; letter-spacing: .04em;
+      background: var(--azul); color: #fff; border: 0; border-radius: 4px;
+      padding: 0 16px; height: 38px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .botao:hover { background: var(--azul-escuro); }
+    .botao.perigo { background: var(--erro); }
+    .botao.texto { background: transparent; color: var(--azul); }
+    .botao.texto:hover { background: #eef4fb; }
+    .botao svg { width: 18px; height: 18px; fill: currentColor; }
+
+    table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,.2), 0 2px 2px rgba(0,0,0,.14); }
+    th { font-size: .8rem; font-weight: 700; text-align: left; padding: 14px 14px; border-bottom: 1px solid var(--linha); }
+    td { font-size: .8rem; padding: 14px; border-bottom: 1px solid var(--linha); }
+    tr:last-child td { border-bottom: 0; }
+    th.centro, td.centro { text-align: center; white-space: nowrap; }
+    td.vazio { text-align: center; color: var(--suave); padding: 24px; }
+
+    .icone {
+      background: none; border: 0; cursor: pointer; padding: 6px; border-radius: 50%;
+      display: inline-flex; color: var(--tinta);
+    }
+    .icone:hover { background: rgba(0,0,0,.07); }
+    .icone.perigo { color: var(--erro); }
+    .icone svg { width: 22px; height: 22px; fill: currentColor; }
+    .icone:focus-visible, .botao:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--azul); outline-offset: 2px;
+    }
+
+    dialog { border: 0; border-radius: 4px; padding: 0; width: 400px; max-width: calc(100vw - 32px); box-shadow: 0 11px 15px -7px rgba(0,0,0,.2), 0 24px 38px 3px rgba(0,0,0,.14); }
+    dialog::backdrop { background: rgba(0,0,0,.4); }
+    dialog.largo { width: 520px; }
+    .conteudo { padding: 16px; display: grid; gap: 12px; }
+    .conteudo h2 { margin: 0 0 4px; font-size: 1.15rem; font-weight: 700; }
+    .campo { display: grid; gap: 2px; font-size: .75rem; color: var(--suave); }
+    .campo input, .campo select, .campo textarea {
+      font: inherit; font-size: 1rem; color: var(--tinta); background: none;
+      border: 0; border-bottom: 1px solid #9e9e9e; padding: 6px 0; border-radius: 0;
+    }
+    .campo input:focus, .campo select:focus, .campo textarea:focus { border-bottom-color: var(--azul); outline: 0; box-shadow: 0 1px 0 var(--azul); }
+    .campo textarea { min-height: 96px; resize: vertical; }
+    .campo input:disabled { color: #aaa; border-bottom-style: dotted; }
+    .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+    .mov { border-left: 4px solid var(--azul); padding: 2px 0 2px 12px; font-size: .9rem; }
+    .mov .meta { color: var(--suave); font-size: .8rem; }
+
+    #aviso-area { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 10; display: grid; gap: 8px; }
+    .aviso { padding: 10px 18px; border-radius: 4px; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    .aviso.ok { background: var(--ok); }
+    .aviso.erro { background: var(--erro); }
+
+    @media (max-width: 640px) {
+      .barra { flex-direction: column; align-items: stretch; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+
+{% macro icone(nome) -%}
+  {%- if nome == 'edit' -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+  {%- elif nome == 'swap' -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/></svg>
+  {%- elif nome == 'history' -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.95 8.95 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+  {%- elif nome == 'delete' -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+  {%- elif nome == 'add' -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  {%- endif -%}
+{%- endmacro %}
+
+<header>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h18V4H4a2 2 0 0 0-2 2v11H0v3h14v-3H4V6zm19 2h-6a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1zm-1 9h-4v-7h4v7z"/></svg>
+  TechTrack – Controle de Ativos de TI
+</header>
+
+<div id="aviso-area">
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for categoria, texto in mensagens %}
+      <div class="aviso {{ categoria }}" role="status">{{ texto }}</div>
+    {% endfor %}
+  {% endwith %}
+</div>
+
+<main>
+  <div class="barra">
+    <form method="get" action="{{ url_for('home') }}" style="flex:1; display:flex">
+      <input type="search" id="busca" name="busca" value="{{ busca }}"
+             placeholder="Buscar por Serial Number ou HostName" aria-label="Buscar">
+    </form>
+    <button class="botao" type="button" onclick="document.getElementById('dlg-novo').showModal()">
+      {{ icone('add') }} Novo equipamento
+    </button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Serial Number</th>
+        <th>HostName</th>
+        <th>Colaborador</th>
+        <th>Setor</th>
+        <th class="centro">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in equipamentos %}
+      <tr>
+        <td>{{ e.serial_number }}</td>
+        <td>{{ e.hostname }}</td>
+        <td>{{ e.colaborador }}</td>
+        <td>{{ e.setor }}</td>
+        <td class="centro">
+          <button class="icone" type="button" title="Editar" aria-label="Editar {{ e.serial_number }}"
+                  onclick="document.getElementById('dlg-editar-{{ e.id }}').showModal()">{{ icone('edit') }}</button>
+          <button class="icone" type="button" title="Movimentar" aria-label="Movimentar {{ e.serial_number }}"
+                  onclick="document.getElementById('dlg-mov-{{ e.id }}').showModal()">{{ icone('swap') }}</button>
+          <button class="icone" type="button" title="Histórico" aria-label="Histórico de {{ e.serial_number }}"
+                  onclick="document.getElementById('dlg-hist-{{ e.id }}').showModal()">{{ icone('history') }}</button>
+          <button class="icone perigo" type="button" title="Excluir" aria-label="Excluir {{ e.serial_number }}"
+                  onclick="document.getElementById('dlg-excluir-{{ e.id }}').showModal()">{{ icone('delete') }}</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td class="vazio" colspan="5">
+        {% if busca %}Nenhum equipamento encontrado.{% else %}Nenhum equipamento cadastrado. Clique em "Novo equipamento" para começar.{% endif %}
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+
+<!-- Novo equipamento -->
+<dialog id="dlg-novo">
+  <form class="conteudo" method="post" action="{{ url_for('criar') }}">
+    <h2>Novo equipamento</h2>
+    <label class="campo">Serial Number *<input name="serial_number" required></label>
+    <label class="campo">HostName<input name="hostname"></label>
+    <label class="campo">Colaborador<input name="colaborador"></label>
+    <label class="campo">Setor<input name="setor"></label>
+    <div class="acoes">
+      <button type="button" class="botao texto" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="submit" class="botao">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+{% for e in equipamentos %}
+<!-- Editar -->
+<dialog id="dlg-editar-{{ e.id }}">
+  <form class="conteudo" method="post" action="{{ url_for('atualizar', equip_id=e.id) }}">
+    <h2>Editar equipamento</h2>
+    <label class="campo">Serial Number *<input name="serial_number" value="{{ e.serial_number }}" required></label>
+    <label class="campo">HostName<input name="hostname" value="{{ e.hostname }}"></label>
+    <label class="campo">Colaborador<input name="colaborador" value="{{ e.colaborador }}"></label>
+    <label class="campo">Setor<input name="setor" value="{{ e.setor }}"></label>
+    <div class="acoes">
+      <button type="button" class="botao texto" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="submit" class="botao">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Movimentar -->
+<dialog id="dlg-mov-{{ e.id }}">
+  <form class="conteudo form-mov" method="post" action="{{ url_for('movimentar', equip_id=e.id) }}">
+    <h2>Movimentar {{ e.serial_number }}</h2>
+    <label class="campo">Tipo de operação *
+      <select name="tipo" class="campo-tipo" required>
+        {% for t in tipos %}<option>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="campo">Colaborador responsável *<input name="colaborador" class="campo-destino" required></label>
+    <label class="campo">Setor de destino *<input name="setor_destino" class="campo-destino" required></label>
+    <label class="campo">Motivo<textarea name="motivo"></textarea></label>
+    <label class="campo">Responsável pela operação *<input name="responsavel_operacao" required></label>
+    <div class="acoes">
+      <button type="button" class="botao texto" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="submit" class="botao">Registrar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Histórico -->
+<dialog id="dlg-hist-{{ e.id }}" class="largo">
+  <div class="conteudo">
+    <h2>Histórico de {{ e.serial_number }}</h2>
+    {% for m in e.historico %}
+      <div class="mov">
+        <strong>{{ m.tipo }}</strong>
+        <div>
+          De {{ m.colaborador_anterior or "sem colaborador" }} ({{ m.setor_anterior or "sem setor" }})
+          para {{ m.colaborador_novo or "sem colaborador" }} ({{ m.setor_novo or "sem setor" }})
+        </div>
+        {% if m.motivo %}<div>Motivo: {{ m.motivo }}</div>{% endif %}
+        <div class="meta">{{ m.data }}, por {{ m.responsavel_operacao }}</div>
+      </div>
+    {% else %}
+      <p>Nenhuma movimentação registrada.</p>
+    {% endfor %}
+    <div class="acoes">
+      <button type="button" class="botao texto" onclick="this.closest('dialog').close()">Fechar</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Excluir -->
+<dialog id="dlg-excluir-{{ e.id }}">
+  <form class="conteudo" method="post" action="{{ url_for('excluir', equip_id=e.id) }}">
+    <h2>Excluir {{ e.serial_number }}?</h2>
+    <p style="margin:0">O histórico de movimentações dele também será apagado.</p>
+    <div class="acoes">
+      <button type="button" class="botao texto" onclick="this.closest('dialog').close()">Cancelar</button>
+      <button type="submit" class="botao perigo">Excluir</button>
+    </div>
+  </form>
+</dialog>
+{% endfor %}
+
+<script>
+  // Busca: envia ao parar de digitar e devolve o cursor ao campo
+  var busca = document.getElementById("busca");
+  var espera;
+  busca.addEventListener("input", function () {
+    clearTimeout(espera);
+    espera = setTimeout(function () { busca.form.submit(); }, 450);
+  });
+  if (busca.value) {
+    busca.focus();
+    busca.setSelectionRange(busca.value.length, busca.value.length);
+  }
+
+  // Devolução: colaborador e setor de destino não são usados
+  document.querySelectorAll(".form-mov").forEach(function (form) {
+    var tipo = form.querySelector(".campo-tipo");
+    var destinos = form.querySelectorAll(".campo-destino");
+    tipo.addEventListener("change", function () {
+      var devolucao = tipo.value === "Devolução";
+      destinos.forEach(function (campo) {
+        campo.disabled = devolucao;
+        if (devolucao) campo.value = "";
+      });
+    });
+  });
+
+  // Avisos somem sozinhos
+  setTimeout(function () {
+    document.querySelectorAll(".aviso").forEach(function (a) { a.remove(); });
+  }, 4500);
+</script>
+</body>
+</html>
