@@ -1,162 +1,162 @@
-"""Camada de dados do TechTrack.
+"""TechTrack – abre o sistema no navegador, sem Flask, sem Jinja e sem instalar nada.
 
-Aqui ficam TODAS as operações com o banco (SQLite). A interface (main.py)
-nunca escreve SQL: ela só chama as funções deste arquivo.
+Este arquivo usa apenas a biblioteca padrão do Python. Ele serve a página
+index.html e responde às chamadas dela, que por sua vez usam as funções do
+data.py (nenhum SQL fica aqui).
+
+Como rodar:  python main.py
+(o navegador abre sozinho; para encerrar, feche esta janela ou use Ctrl+C)
 """
-import sqlite3
-from datetime import datetime
+import json
+import re
+import threading
+import traceback
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-DB_PATH = Path(__file__).with_name("techtrack.db")
+import data
 
-TIPOS_MOVIMENTACAO = ["Transferência", "Devolução", "Troca"]
-SETOR_TI = "TI"  # destino usado em devoluções
-
-
-def _conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # permite acessar colunas pelo nome
-    return conn
+PASTA = Path(__file__).parent
+ENDERECO = "127.0.0.1"  # só este computador consegue acessar
+PORTAS = range(8080, 8090)
 
 
-def _limpar(valor):
-    """Transforma texto vazio em None (e remove espaços nas pontas)."""
-    valor = (valor or "").strip()
-    return valor or None
+class Handler(BaseHTTPRequestHandler):
+    server_version = "TechTrack"
+
+    def log_message(self, *args):  # deixa o terminal limpo
+        pass
+
+    # ----- respostas -----
+
+    def _responder(self, corpo, tipo, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(corpo)
+
+    def _json(self, dados, status=200):
+        corpo = json.dumps(dados, ensure_ascii=False).encode("utf-8")
+        self._responder(corpo, "application/json; charset=utf-8", status)
+
+    def _ler_json(self):
+        tamanho = int(self.headers.get("Content-Length") or 0)
+        bruto = self.rfile.read(tamanho) if tamanho else b"{}"
+        return json.loads(bruto or b"{}")
+
+    def _executar(self, acao, *args):
+        """Roda uma função do data.py e devolve {ok: true} ou {ok: false, erro: ...}."""
+        try:
+            acao(*args)
+        except ValueError as erro:
+            return self._json({"ok": False, "erro": str(erro)})
+        self._json({"ok": True})
+
+    # ----- rotas -----
+
+    def _tratar(self, metodo):
+        try:
+            url = urlparse(self.path)
+            caminho = url.path
+
+            if metodo == "GET" and caminho in ("/", "/index.html"):
+                pagina = (PASTA / "index.html").read_bytes()
+                return self._responder(pagina, "text/html; charset=utf-8")
+
+            if metodo == "GET" and caminho == "/api/config":
+                return self._json({
+                    "ok": True,
+                    "tipos": data.TIPOS_MOVIMENTACAO,
+                    "setor_ti": data.SETOR_TI,
+                })
+
+            if caminho == "/api/equipamentos":
+                if metodo == "GET":
+                    busca = parse_qs(url.query).get("busca", [""])[0]
+                    return self._json({"ok": True, "equipamentos": data.listar(busca)})
+                if metodo == "POST":
+                    f = self._ler_json()
+                    return self._executar(
+                        data.criar,
+                        f.get("serial_number"), f.get("hostname"),
+                        f.get("colaborador"), f.get("setor"),
+                    )
+
+            m = re.fullmatch(r"/api/equipamentos/(\d+)", caminho)
+            if m:
+                equip_id = int(m.group(1))
+                if metodo == "PUT":
+                    f = self._ler_json()
+                    return self._executar(
+                        data.atualizar, equip_id,
+                        f.get("serial_number"), f.get("hostname"),
+                        f.get("colaborador"), f.get("setor"),
+                    )
+                if metodo == "DELETE":
+                    return self._executar(data.excluir, equip_id)
+
+            m = re.fullmatch(r"/api/equipamentos/(\d+)/movimentar", caminho)
+            if m and metodo == "POST":
+                f = self._ler_json()
+                return self._executar(
+                    data.movimentar, int(m.group(1)),
+                    f.get("tipo"), f.get("colaborador"), f.get("setor_destino"),
+                    f.get("motivo"), f.get("responsavel_operacao"),
+                )
+
+            m = re.fullmatch(r"/api/equipamentos/(\d+)/historico", caminho)
+            if m and metodo == "GET":
+                return self._json({"ok": True, "historico": data.historico(int(m.group(1)))})
+
+            self._json({"ok": False, "erro": "Página não encontrada."}, 404)
+        except Exception:
+            traceback.print_exc()
+            self._json({"ok": False, "erro": "Erro inesperado no TechTrack. Veja a janela do programa."}, 500)
+
+    def do_GET(self):
+        self._tratar("GET")
+
+    def do_POST(self):
+        self._tratar("POST")
+
+    def do_PUT(self):
+        self._tratar("PUT")
+
+    def do_DELETE(self):
+        self._tratar("DELETE")
 
 
-def _para_dict(row):
-    """Converte uma linha do banco em dict, trocando None por texto vazio."""
-    return {k: ("" if row[k] is None else row[k]) for k in row.keys()}
+def main():
+    if not (PASTA / "index.html").exists():
+        raise SystemExit("Não encontrei o index.html na mesma pasta do main.py.")
 
+    data.init_db()
 
-def init_db():
-    """Cria as tabelas se ainda não existirem."""
-    with _conn() as c:
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS equipamentos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                serial_number TEXT NOT NULL UNIQUE,
-                hostname TEXT UNIQUE,
-                colaborador TEXT,
-                setor TEXT
-            )"""
-        )
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS movimentacoes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                equipamento_id INTEGER NOT NULL,
-                tipo TEXT NOT NULL,
-                responsavel_operacao TEXT NOT NULL,
-                data TEXT NOT NULL,
-                colaborador_anterior TEXT,
-                setor_anterior TEXT,
-                colaborador_novo TEXT,
-                setor_novo TEXT,
-                motivo TEXT,
-                FOREIGN KEY (equipamento_id) REFERENCES equipamentos(id)
-            )"""
-        )
+    servidor = None
+    for porta in PORTAS:
+        try:
+            servidor = ThreadingHTTPServer((ENDERECO, porta), Handler)
+            break
+        except OSError:
+            continue  # porta ocupada, tenta a próxima
+    if servidor is None:
+        raise SystemExit("Não consegui abrir nenhuma porta entre 8080 e 8089. Feche outros programas e tente de novo.")
 
-
-# ---------- CRUD de equipamentos ----------
-
-def listar(busca=""):
-    """Lista equipamentos; a busca procura por Serial Number ou HostName."""
-    termo = f"%{(busca or '').strip()}%"
-    with _conn() as c:
-        rows = c.execute(
-            """SELECT * FROM equipamentos
-               WHERE serial_number LIKE ? OR hostname LIKE ?
-               ORDER BY id DESC""",
-            (termo, termo),
-        ).fetchall()
-    return [_para_dict(r) for r in rows]
-
-
-def criar(serial_number, hostname, colaborador, setor):
-    serial = _limpar(serial_number)
-    if not serial:
-        raise ValueError("O Serial Number é obrigatório.")
+    url = f"http://{ENDERECO}:{servidor.server_address[1]}"
+    print(f"TechTrack rodando em {url}")
+    print("Para encerrar, feche esta janela ou pressione Ctrl+C.")
+    threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
-        with _conn() as c:
-            c.execute(
-                "INSERT INTO equipamentos (serial_number, hostname, colaborador, setor) "
-                "VALUES (?, ?, ?, ?)",
-                (serial, _limpar(hostname), _limpar(colaborador), _limpar(setor)),
-            )
-    except sqlite3.IntegrityError:
-        raise ValueError("Já existe um equipamento com esse Serial Number ou HostName.")
+        servidor.serve_forever()
+    except KeyboardInterrupt:
+        print("\nTechTrack encerrado.")
+    finally:
+        servidor.server_close()
 
 
-def atualizar(equip_id, serial_number, hostname, colaborador, setor):
-    serial = _limpar(serial_number)
-    if not serial:
-        raise ValueError("O Serial Number é obrigatório.")
-    try:
-        with _conn() as c:
-            c.execute(
-                "UPDATE equipamentos SET serial_number=?, hostname=?, colaborador=?, setor=? "
-                "WHERE id=?",
-                (serial, _limpar(hostname), _limpar(colaborador), _limpar(setor), equip_id),
-            )
-    except sqlite3.IntegrityError:
-        raise ValueError("Já existe um equipamento com esse Serial Number ou HostName.")
-
-
-def excluir(equip_id):
-    """Exclui o equipamento e o histórico dele."""
-    with _conn() as c:
-        c.execute("DELETE FROM movimentacoes WHERE equipamento_id=?", (equip_id,))
-        c.execute("DELETE FROM equipamentos WHERE id=?", (equip_id,))
-
-
-# ---------- Movimentações e histórico ----------
-
-def movimentar(equip_id, tipo, colaborador, setor_destino, motivo, responsavel_operacao):
-    """Registra a movimentação e atualiza o equipamento, na mesma transação."""
-    if tipo not in TIPOS_MOVIMENTACAO:
-        raise ValueError("Selecione o tipo de operação.")
-    responsavel = _limpar(responsavel_operacao)
-    if not responsavel:
-        raise ValueError("Informe o responsável pela operação.")
-
-    if tipo == "Devolução":
-        # Devolução = equipamento volta ao controle do setor de TI
-        colaborador_novo, setor_novo = None, SETOR_TI
-    else:
-        colaborador_novo, setor_novo = _limpar(colaborador), _limpar(setor_destino)
-        if not colaborador_novo or not setor_novo:
-            raise ValueError("Informe o colaborador responsável e o setor de destino.")
-
-    with _conn() as c:
-        atual = c.execute("SELECT * FROM equipamentos WHERE id=?", (equip_id,)).fetchone()
-        if atual is None:
-            raise ValueError("Equipamento não encontrado.")
-        c.execute(
-            """INSERT INTO movimentacoes
-               (equipamento_id, tipo, responsavel_operacao, data,
-                colaborador_anterior, setor_anterior,
-                colaborador_novo, setor_novo, motivo)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                equip_id, tipo, responsavel,
-                datetime.now().strftime("%d/%m/%Y %H:%M"),
-                atual["colaborador"], atual["setor"],
-                colaborador_novo, setor_novo, _limpar(motivo),
-            ),
-        )
-        c.execute(
-            "UPDATE equipamentos SET colaborador=?, setor=? WHERE id=?",
-            (colaborador_novo, setor_novo, equip_id),
-        )
-
-
-def historico(equip_id):
-    """Movimentações de um equipamento, da mais recente para a mais antiga."""
-    with _conn() as c:
-        rows = c.execute(
-            "SELECT * FROM movimentacoes WHERE equipamento_id=? ORDER BY id DESC",
-            (equip_id,),
-        ).fetchall()
-    return [_para_dict(r) for r in rows]
+if __name__ == "__main__":
+    main()
